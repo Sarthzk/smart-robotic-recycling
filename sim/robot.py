@@ -17,12 +17,19 @@ TOOL_RGBA = {"gripper": (0.1, 0.8, 0.3, 1), "fail": (1.0, 0.1, 0.1, 1), "suction
 
 class Robot:
     def __init__(self):
-        self.id = p.loadURDF("kuka_iiwa/model.urdf", [0, 0, 0], useFixedBase=True)
+        self.id = p.loadURDF("kuka_iiwa/model.urdf", [0, 0, 0.02], useFixedBase=True)
         for j, q in enumerate(REST):
             p.resetJointState(self.id, j, q)
-        vis = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.025, 0.025, 0.04], rgbaColor=TOOL_RGBA["gripper"])
-        self.tool = p.createMultiBody(0, -1, vis, [0, 0, 1])
-        self.mode = "gripper"
+        dark = (0.15, 0.16, 0.18, 1)
+        def vbox(half, rgba):
+            return p.createMultiBody(0, -1, p.createVisualShape(p.GEOM_BOX, halfExtents=half, rgbaColor=rgba), [0, 0, 1])
+        self.palm = vbox([0.03, 0.03, 0.015], TOOL_RGBA["gripper"])
+        self.finger_l = vbox([0.006, 0.02, 0.03], dark)
+        self.finger_r = vbox([0.006, 0.02, 0.03], dark)
+        self.cup = p.createMultiBody(0, -1, p.createVisualShape(p.GEOM_CYLINDER, radius=0.022, length=0.03,
+                                                                rgbaColor=TOOL_RGBA["suction"]), [0, 0, 1])
+        self.key = "gripper"
+        self.closed = False
         self.tip_target = HOME_TIP.copy()
 
     def tip_position(self):
@@ -30,7 +37,12 @@ class Robot:
         return np.array(pos) + np.array(p.getMatrixFromQuaternion(orn)).reshape(3, 3)[:, 2] * TIP
 
     def set_tool_color(self, key):
-        p.changeVisualShape(self.tool, -1, rgbaColor=TOOL_RGBA[key])
+        """key: 'gripper' (normal), 'fail' (red) or 'suction' (backup tool)."""
+        self.key = key
+        p.changeVisualShape(self.palm, -1, rgbaColor=TOOL_RGBA[key])
+
+    def set_grip(self, closed):
+        self.closed = closed
 
     def command(self, tip):
         """Drive the arm so the tool tip heads to `tip` (world xyz)."""
@@ -43,7 +55,17 @@ class Robot:
 
     def update_tool_visual(self):
         tip = self.tip_position()
-        p.resetBasePositionAndOrientation(self.tool, (tip + [0, 0, 0.04]).tolist(), [0, 0, 0, 1])
+        x, y, z = tip
+        p.resetBasePositionAndOrientation(self.palm, [x, y, z + 0.075], [0, 0, 0, 1])
+        if self.key == "suction":                       # backup tool: one suction cup, no fingers
+            p.resetBasePositionAndOrientation(self.cup, [x, y, z + 0.03], [0, 0, 0, 1])
+            for f in (self.finger_l, self.finger_r):
+                p.resetBasePositionAndOrientation(f, [x, y, -5], [0, 0, 0, 1])
+        else:
+            gap = 0.017 if self.closed else 0.034
+            p.resetBasePositionAndOrientation(self.cup, [x, y, -5], [0, 0, 0, 1])
+            p.resetBasePositionAndOrientation(self.finger_l, [x - gap, y, z + 0.03], [0, 0, 0, 1])
+            p.resetBasePositionAndOrientation(self.finger_r, [x + gap, y, z + 0.03], [0, 0, 0, 1])
         return tip
 
     def settle(self, tip, steps=240):

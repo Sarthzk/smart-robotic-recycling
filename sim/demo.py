@@ -104,6 +104,7 @@ class Demo:
             a = smooth((k + 1) / n_g)
             tip = start + (above - start) * min(1, a * 2) if a < 0.5 else above + (grasp - above) * (a - 0.5) * 2
             self.frame(t0 + (t1 - t0) * k / self.frames, tip)
+        self.robot.set_grip(True)                    # fingers close on the item (or on nothing, if the grasp fails)
         if failed:
             self.robot.set_tool_color("fail")
             self.banner = f"GRIPPER FAILED on {item.kind}  ->  replanning"
@@ -123,6 +124,8 @@ class Demo:
             bx = BIN_X[dest]
             drop = np.array([bx, BIN_Y, 0.20])
             mid = np.array([0.0, 0.0, 0.42])
+        if failed:
+            self.robot.set_grip(False)               # give up and open the gripper again
         n_b = self.frames - n_g
         cur = self.robot.tip_position()
         for k in range(n_b):
@@ -136,6 +139,7 @@ class Demo:
             else:
                 tip = mid + (drop - mid) * ((a - 0.65) / 0.35)
             self.frame(t0 + (t1 - t0) * (n_g + k) / self.frames, tip, held=None if failed else item)
+        self.robot.set_grip(False)                   # release over the bin
         if not failed:
             self.world.drop_in_bin(item, dest)
             if dest == "overflow":
@@ -156,6 +160,7 @@ class Demo:
 
     # --------------------------------------------------------------- metrics
     def write_metrics(self, ranking, finished=False):
+        self.world.update_bin_counters(self.env.bins, self.env.capacity)
         m = self.env.metrics()
         m.update(time=round(self.env.t, 1), finished=finished, banner=self.banner,
                  events=self.env.log[-14:],

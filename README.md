@@ -5,8 +5,9 @@ A 3D simulation of a robot arm sorting waste on a conveyor belt. It does **not**
 most important item first. It **learns** better priorities by trial and error (reinforcement learning) and
 **replans** when a bin is full or its gripper fails. A **live dashboard** shows the results.
 
-![gripper failure](results/screenshots/02_gripper_failure.png)
-![bin full -> overflow](results/screenshots/06_bin_full_overflow.png)
+![3D simulation](results/screenshots/demo_scene_1.png)
+![3D simulation, bins filling up](results/screenshots/demo_scene_2.png)
+![live dashboard](results/screenshots/dashboard.png)
 
 ## Software
 Python, PyBullet (3D physics), NumPy (scoring + learning), Streamlit / Matplotlib (dashboard + graphs), GitHub.
