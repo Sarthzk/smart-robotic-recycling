@@ -1,0 +1,4 @@
+method,value_recovered,recovery_rate_pct,hazards_caught,hazards_escaped,items_sorted
+Colour sorting,55.39,63.82,3.05,1.83,25.68
+Fixed score,72.43,83.49,4.6,0.28,26.52
+Learned score,71.39,82.19,4.8,0.08,24.64
