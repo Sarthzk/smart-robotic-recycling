@@ -17,7 +17,8 @@ Needs only a laptop. **Use Python 3.10-3.12** (PyBullet does not install cleanly
 pip install -r requirements.txt
 python main.py train            # robot learns item priorities (~10 s) -> weights.npy, results/learning_curve.png
 python main.py compare          # colour vs fixed score vs learned -> results/comparison.png / .csv
-python main.py demo             # 3D robot window (add --headless --screenshots out/ to run without a window)
+python main.py demo             # 3D robot window; --speed 6 for faster, --speed 1 for slow motion
+                                # (add --headless --screenshots out/ to run without a window)
 streamlit run dashboard/app.py  # live dashboard; run in a second terminal while the demo is running
 python -m pytest                # tests
 ```

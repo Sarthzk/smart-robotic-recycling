@@ -81,7 +81,7 @@ def cmd_compare(args):
 def cmd_demo(args):
     from sim.demo import run_demo
     run_demo(headless=args.headless, seed=args.seed, max_picks=args.max_picks,
-             screenshot_dir=args.screenshots)
+             screenshot_dir=args.screenshots, speed=args.speed)
 
 
 if __name__ == "__main__":
@@ -94,6 +94,7 @@ if __name__ == "__main__":
     p = sub.add_parser("demo"); p.add_argument("--headless", action="store_true")
     p.add_argument("--seed", type=int, default=7); p.add_argument("--max-picks", type=int, default=40)
     p.add_argument("--screenshots", default=None, help="folder to save camera screenshots")
+    p.add_argument("--speed", type=float, default=3.0, help="animation speed, higher = faster (default 3; try 6 if slow)")
     p.set_defaults(fn=cmd_demo)
     args = ap.parse_args()
     args.fn(args)

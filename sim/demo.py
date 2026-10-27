@@ -13,7 +13,7 @@ from sim.robot import Robot, HOME_TIP
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 METRICS_PATH = os.path.join(ROOT, "logs", "live_metrics.json")
-FRAMES = 150                    # animation frames per pick
+FRAMES = 150                    # animation frames per pick at --speed 1
 SUBSTEPS = 4                    # physics steps per frame (240 Hz physics -> 60 fps)
 
 # to make the demo show replanning, the metal and plastic bins are tiny and the gripper breaks on two picks
@@ -26,12 +26,16 @@ def smooth(a):
 
 
 class Demo:
-    def __init__(self, headless, seed, screenshot_dir=None):
+    def __init__(self, headless, seed, screenshot_dir=None, speed=3.0):
+        self.headless = headless
+        self.speed = max(0.25, float(speed))
+        self.frames = max(30, int(FRAMES / self.speed))          # animation frames per pick
+        self.n_frames, self.t_start = 0, time.perf_counter()
+        self._last = time.perf_counter()
         self.env = RecyclingEnv(seed=seed, capacity=DEMO_CAPACITY, forced_fail_attempts=DEMO_FAIL_ATTEMPTS)
         self.planner = Planner(load_weights())
         self.world = World(self.env.items, headless=headless)
         self.robot = Robot()
-        self.headless = headless
         self.vt = self.env.t
         self.picked = set()
         self.shots = screenshot_dir
@@ -40,6 +44,16 @@ class Demo:
         if self.shots:
             os.makedirs(self.shots, exist_ok=True)
         self.robot.settle(HOME_TIP, 300)
+
+    @property
+    def banner(self):
+        return self._banner
+
+    @banner.setter
+    def banner(self, text):
+        self._banner = text
+        if hasattr(self, "world"):
+            self.world.set_status(text)          # shown in the 3D window (no-op when headless)
 
     # --------------------------------------------------------------- one animation frame
     def frame(self, vt, tip, held=None):
@@ -51,8 +65,10 @@ class Demo:
         if held is not None:
             self.world.place_item(held, (pos - [0, 0, self.world.shape_half[held.uid]]).tolist())
         self.world.update_belt(vt, self.picked)
-        if not self.headless:
-            time.sleep(1 / 60)
+        self.n_frames += 1
+        if not self.headless:                    # pace to 60 fps but never wait longer than needed
+            time.sleep(max(0.0, 1 / 60 - (time.perf_counter() - self._last)))
+            self._last = time.perf_counter()
 
     def screenshot(self, name):
         if not self.shots:
@@ -79,7 +95,7 @@ class Demo:
         t0, t1 = info["t0"], info["t1"]
         failed = info["outcome"] == "failed"
         tool = info["tool"] if not failed else "fail"
-        n_g = int(FRAMES * 0.45)                      # grasp happens here
+        n_g = int(self.frames * 0.45)                      # grasp happens here
         start = self.robot.tip_position()
         gx = float(np.clip(self.world.item_pos_on_belt(item, t0 + (t1 - t0) * 0.45)[0], -0.42, 0.42))
         above = np.array([gx, BELT_Y, 0.22])
@@ -87,7 +103,7 @@ class Demo:
         for k in range(n_g):                          # approach: hover above, then descend onto the item
             a = smooth((k + 1) / n_g)
             tip = start + (above - start) * min(1, a * 2) if a < 0.5 else above + (grasp - above) * (a - 0.5) * 2
-            self.frame(t0 + (t1 - t0) * k / FRAMES, tip)
+            self.frame(t0 + (t1 - t0) * k / self.frames, tip)
         if failed:
             self.robot.set_tool_color("fail")
             self.banner = f"GRIPPER FAILED on {item.kind}  ->  replanning"
@@ -108,7 +124,7 @@ class Demo:
             bx = BIN_X[dest]
             drop = np.array([bx, BIN_Y, 0.20])
             mid = np.array([0.0, 0.0, 0.42])
-        n_b = FRAMES - n_g
+        n_b = self.frames - n_g
         cur = self.robot.tip_position()
         for k in range(n_b):
             a = smooth((k + 1) / n_b)
@@ -120,7 +136,7 @@ class Demo:
                 tip = lift + (mid - lift) * ((a - 0.35) / 0.3)
             else:
                 tip = mid + (drop - mid) * ((a - 0.65) / 0.35)
-            self.frame(t0 + (t1 - t0) * (n_g + k) / FRAMES, tip, held=None if failed else item)
+            self.frame(t0 + (t1 - t0) * (n_g + k) / self.frames, tip, held=None if failed else item)
         if not failed:
             self.world.drop_in_bin(item, dest)
             if dest == "overflow":
@@ -132,7 +148,7 @@ class Demo:
 
     def idle_until(self, t_next):
         t0 = self.vt
-        n = int(np.clip((t_next - t0) * 30, 10, 120))
+        n = int(np.clip((t_next - t0) * 30 / self.speed, 6, 120))
         cur = self.robot.tip_position()
         for k in range(n):
             a = smooth((k + 1) / n)
@@ -179,8 +195,8 @@ class Demo:
         return env.metrics()
 
 
-def run_demo(headless=False, seed=7, max_picks=40, screenshot_dir=None):
-    d = Demo(headless, seed, screenshot_dir)
+def run_demo(headless=False, seed=7, max_picks=40, screenshot_dir=None, speed=3.0):
+    d = Demo(headless, seed, screenshot_dir, speed)
     try:
         m = d.run(max_picks)
         print(f"\nDemo finished. Sorted {m['sorted']} items, recovered value {m['value']:.1f} "
@@ -190,6 +206,8 @@ def run_demo(headless=False, seed=7, max_picks=40, screenshot_dir=None):
         print("\nEvent log (last 15):")
         print("\n".join(d.env.log[-15:]))
         if not headless:
+            fps = d.n_frames / max(1e-6, time.perf_counter() - d.t_start)
+            print(f"\nAverage speed: {fps:.0f} frames/second (60 is smooth; tell me this number if it still feels slow)")
             input("\nPress Enter to close the window...")
     finally:
         d.world.close()

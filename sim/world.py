@@ -36,6 +36,7 @@ class World:
         self.cid = p.connect(p.DIRECT if headless else p.GUI)
         if not headless:
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+            p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 0)      # shadows are slow in the macOS window
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(1 / 240)
@@ -71,7 +72,7 @@ class World:
             for dx, dy, hx, hy in ((0.10, 0, 0.004, 0.10), (-0.10, 0, 0.004, 0.10),
                                    (0, 0.10, 0.10, 0.004), (0, -0.10, 0.10, 0.004)):
                 self._box([hx, hy, 0.04], [x + dx, BIN_Y + dy, 0.04], c)
-            self._text(name.upper(), [x - 0.07, BIN_Y - 0.15, 0.01], (1, 1, 1), 1.0)
+            self._text(name.upper(), [x - 0.07, BIN_Y - 0.16, 0.12], (1, 1, 1), 1.0)   # floats above the walls
 
     def _text(self, txt, pos, rgb, size, **kw):
         try:
@@ -93,8 +94,22 @@ class World:
         orn = p.getQuaternionFromEuler([math.pi / 2, 0, 0]) if kind == "cyl" else [0, 0, 0, 1]
         body = p.createMultiBody(0, -1, vis, [0, 0, -5], orn)
         self.body[it.uid], self.shape_half[it.uid] = body, half_h
-        self.label[it.uid] = self._text(f"{it.kind} ${it.recovered_value:.1f}", [0, 0, half_h + 0.03],
-                                        (1, 1, 1), 0.9, parentObjectUniqueId=body)
+        self.label[it.uid] = -1            # labels are created only while the item is on the belt (speed)
+
+    def _show_label(self, it, on):
+        if self.headless:
+            return
+        has = self.label[it.uid] != -1
+        if on and not has:
+            z = self.shape_half[it.uid] + 0.03 + 0.03 * (it.uid % 3)       # stagger so neighbours do not overlap
+            self.label[it.uid] = self._text(f"{it.kind} ${it.recovered_value:.1f}", [0, 0, z], (1, 1, 1), 0.9,
+                                            parentObjectUniqueId=self.body[it.uid])
+        elif not on and has:
+            try:
+                p.removeUserDebugItem(self.label[it.uid])
+            except Exception:
+                pass
+            self.label[it.uid] = -1
 
     def item_pos_on_belt(self, it, vt):
         return [belt_x(it, vt), BELT_Y, BELT_TOP + self.shape_half[it.uid]]
@@ -110,10 +125,7 @@ class World:
         x = BIN_X[dest] + (col - 1) * 0.055
         y = BIN_Y + (row - 1) * 0.055
         self.place_item(it, [x, y, 0.012 + self.shape_half[it.uid] + layer * 0.03])
-        try:
-            p.removeUserDebugItem(self.label[it.uid])
-        except Exception:
-            pass
+        self._show_label(it, False)
 
     def update_belt(self, vt, picked):
         """Place every item and stripe for visual time vt. Picked items are handled elsewhere."""
@@ -123,14 +135,18 @@ class World:
             x = belt_x(it, vt)
             if -BELT_END <= x <= BELT_END:
                 self.place_item(it, self.item_pos_on_belt(it, vt))
+                self._show_label(it, True)
             else:
                 self.place_item(it, [0, 0, -5])          # not on the belt yet / drove off the end
+                self._show_label(it, False)
         shift = (SPEED * vt) % self.stripe_gap
         for i, s in enumerate(self.stripes):
             x = BELT_END - ((i * self.stripe_gap + shift) % (2 * BELT_END))
             p.resetBasePositionAndOrientation(s, [x, BELT_Y, BELT_TOP + 0.002], [0, 0, 0, 1])
 
     def set_status(self, text):
+        if self.headless:
+            return
         self.status_text = self._text(text, [-0.62, -0.1, 0.62], (1, 1, 1), 1.3,
                                       replaceItemUniqueId=self.status_text) if self.status_text != -1 \
             else self._text(text, [-0.62, -0.1, 0.62], (1, 1, 1), 1.3)
