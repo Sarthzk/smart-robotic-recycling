@@ -113,8 +113,7 @@ class Demo:
         else:
             self.picked.add(item.uid)
             self.robot.set_tool_color("suction" if info["tool"] == "suction" else "gripper")
-            self.banner = (f"Picking {item.kind}  (best of {len(ranking)} visible items)  "
-                           f"(value {item.recovered_value:.1f}, hazard {item.hazard:.1f})")
+            self.banner = (f"Picking #1 of {len(ranking)}: {item.kind}  value {item.recovered_value:.1f}  hazard {item.hazard:.1f}")
             self.screenshot("pick")
         dest = info["dest"]
         lift = np.array([gx, BELT_Y, 0.25])
@@ -177,11 +176,13 @@ class Demo:
         while not env.done and picks < max_picks:
             cands = env.candidates()
             if not cands:
+                self.world.label_rank = {}
                 nxt = [i.arrival for i in env.pending if i.arrival > env.t]
                 self.idle_until(min(nxt) if nxt else env.t + 1.0)
                 env.advance_idle()
                 continue
             ranking = self.planner.rank(cands, env.t)
+            self.world.label_rank = {i.uid: r + 1 for r, (i, _) in enumerate(ranking[:3])}   # label the top 3 only
             idx, _ = self.planner.choose(cands, env.t, np.random.default_rng(0))
             item = cands[idx]
             self.write_metrics(ranking)

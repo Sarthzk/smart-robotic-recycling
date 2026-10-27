@@ -49,6 +49,8 @@ class World:
             self._make_item(it)
         self.in_bin = {b: 0 for b in config.BINS}
         self.status_text = -1
+        self.label_rank = None          # {uid: rank} -> label only these items (None = label all)
+        self.label_text = {}
         p.resetDebugVisualizerCamera(1.55, 28, -48, [0.0, 0.0, 0.05])
 
     # ------------------------------------------------------------ static scene
@@ -96,20 +98,28 @@ class World:
         self.body[it.uid], self.shape_half[it.uid] = body, half_h
         self.label[it.uid] = -1            # labels are created only while the item is on the belt (speed)
 
-    def _show_label(self, it, on):
+    def _show_label(self, it, on, text=None):
         if self.headless:
             return
         has = self.label[it.uid] != -1
-        if on and not has:
-            z = self.shape_half[it.uid] + 0.03 + 0.03 * (it.uid % 3)       # stagger so neighbours do not overlap
-            self.label[it.uid] = self._text(f"{it.kind} ${it.recovered_value:.1f}", [0, 0, z], (1, 1, 1), 0.9,
-                                            parentObjectUniqueId=self.body[it.uid])
-        elif not on and has:
+        if has and (not on or self.label_text.get(it.uid) != text):
             try:
                 p.removeUserDebugItem(self.label[it.uid])
             except Exception:
                 pass
             self.label[it.uid] = -1
+            has = False
+        if on and not has:
+            z = self.shape_half[it.uid] + 0.03 + 0.03 * (it.uid % 3)       # stagger so neighbours do not overlap
+            self.label[it.uid] = self._text(text, [0, 0, z], (1, 1, 1), 0.9, parentObjectUniqueId=self.body[it.uid])
+            self.label_text[it.uid] = text
+
+    def _label_for(self, it):
+        """Text to show above an item, or None for no label (only the top-ranked items are labelled)."""
+        if self.label_rank is None:
+            return f"{it.kind} ${it.recovered_value:.1f}"
+        rank = self.label_rank.get(it.uid)
+        return None if rank is None else f"#{rank} {it.kind} ${it.recovered_value:.1f}"
 
     def item_pos_on_belt(self, it, vt):
         return [belt_x(it, vt), BELT_Y, BELT_TOP + self.shape_half[it.uid]]
@@ -135,7 +145,8 @@ class World:
             x = belt_x(it, vt)
             if -BELT_END <= x <= BELT_END:
                 self.place_item(it, self.item_pos_on_belt(it, vt))
-                self._show_label(it, True)
+                text = self._label_for(it)
+                self._show_label(it, text is not None, text)
             else:
                 self.place_item(it, [0, 0, -5])          # not on the belt yet / drove off the end
                 self._show_label(it, False)
@@ -147,9 +158,9 @@ class World:
     def set_status(self, text):
         if self.headless:
             return
-        self.status_text = self._text(text, [-0.62, -0.1, 0.62], (1, 1, 1), 1.3,
-                                      replaceItemUniqueId=self.status_text) if self.status_text != -1 \
-            else self._text(text, [-0.62, -0.1, 0.62], (1, 1, 1), 1.3)
+        pos, size = [-1.45, 0.95, 0.30], 1.0            # upper-left, clear of the arm and bins
+        self.status_text = self._text(text, pos, (1, 1, 0.4), size, replaceItemUniqueId=self.status_text) \
+            if self.status_text != -1 else self._text(text, pos, (1, 1, 0.4), size)
 
     def screenshot(self, width=960, height=600):
         view = p.computeViewMatrixFromYawPitchRoll([0.0, 0.0, 0.05], 1.55, 28, -48, 0, 2)
